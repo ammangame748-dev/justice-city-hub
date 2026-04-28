@@ -151,6 +151,27 @@ app.get('/admin/accept/:id', async (req, res) => {
   }
   res.redirect('/admin-justice?pass=1234');
 });
+// ✅ راوت رفض طلبات الانضمام
+app.get('/admin/reject/:id', async (req, res) => {
+  if (req.query.pass !== "1234") return res.status(403).send("❌ غير مصرح");
+  try {
+    await Application.findByIdAndDelete(req.params.id);
+    res.redirect('/admin-justice?pass=1234');
+  } catch (err) {
+    res.send("خطأ في الحذف: " + err.message);
+  }
+});
+
+// ✅ راوت طرد/حذف ستريمر موجود بالموقع
+app.get('/admin/delete-streamer/:id', async (req, res) => {
+  if (req.query.pass !== "1234") return res.status(403).send("❌ غير مصرح");
+  try {
+    await Streamer.findByIdAndDelete(req.params.id);
+    res.redirect('/admin-justice?pass=1234');
+  } catch (err) {
+    res.send("خطأ في الحذف: " + err.message);
+  }
+});
 
 // ================= SERVER =================
 const PORT = process.env.PORT || 3000;
