@@ -1,147 +1,146 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const axios = require('axios');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+
+// ✅ تم إزالة مكتبة Pusher لأنها تسبب الخطأ ولست بحاجة لها مع وجود دالة التحديث الدوري
 const app = express();
+
+puppeteer.use(StealthPlugin());
 
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
 
-const MONGO_URI = "mongodb+srv://hsamhmaydh4_db_user:xls5Av4Nr4a5PA7W@cluster0.wjnh8d0.mongodb.net/?appName=Cluster0"; 
+// ================= DATABASE =================
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://hsamhmaydh4_db_user:xls5Av4Nr4a5PA7W@cluster0.wjnh8d0.mongodb.net/?appName=Cluster0";
 
-mongoose.connect(MONGO_URI).then(() => console.log('✅ متصل بالداتابيز')).catch(err => console.log(err));
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('✅ متصل بالداتابيز بنجاح'))
+  .catch(err => console.error('❌ خطأ في الاتصال:', err));
 
+// ================= MODELS =================
 const Streamer = mongoose.model('KickConfig', new mongoose.Schema({
-    kickUsername: String,
-    isLive: { type: Boolean, default: false },
-    viewers: { type: Number, default: 0 },
-    profilePic: String // ✅ أضف هذا السطر
+  kickUsername: String,
+  isLive: { type: Boolean, default: false },
+  viewers: { type: Number, default: 0 },
+  profilePic: String
 }));
-
 
 const Application = mongoose.model('Application', new mongoose.Schema({
-    kickUsername: String,
-    status: { type: String, default: 'pending' }
+  kickUsername: String,
+  discordName: String,
+  status: { type: String, default: 'pending' }
 }));
 
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-puppeteer.use(StealthPlugin());
 
+const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 async function updateStatus() {
-    console.log("🔍 جاري فحص حالة الستريمرز...");
-    const streamers = await Streamer.find({ kickUsername: { $ne: null, $exists: true } });
-    
-   const browser = await puppeteer.launch({
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    // هاد السطر السحري اللي بخلي رندر يدور على الكروم لحاله
-    executablePath: process.env.NODE_ENV === 'production' ? null : puppeteer.executablePath()
+  console.log("🔄 جاري التحديث باستخدام المتصفح (Puppeteer)...");
+  
+  const streamers = await Streamer.find({});
+  let browser;
+
+  try {
+browser = await puppeteer.launch({
+  headless: "new",
+  args: ['--no-sandbox', '--disable-setuid-sandbox']
 });
 
+
+
     const page = await browser.newPage();
+    
+    // محاكاة متصفح حقيقي عشان ما ننكشف
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
 
-    for (const s of streamers) {
-        try {
-            // ✅ تم تصحيح الرابط هنا بإضافة المسار الصحيح وعلامة الـ $
-            const url = `https://kick.com/api/v2/channels/${s.kickUsername.trim()}`;
-            await page.goto(`https://kick.com/api/v2/channels/${s.kickUsername.trim()}`, { waitUntil: 'networkidle2', timeout: 60000 });
-            
-            const content = await page.evaluate(() => document.querySelector('body').innerText);
-            const data = JSON.parse(content);
+    for (const streamer of streamers) {
+      try {
+        console.log(`🔍 فحص: ${streamer.kickUsername}`);
+        
+        // الانتقال لرابط الـ API الخاص بالقناة
+        await page.goto(`https://kick.com/api/v2/channels/${streamer.kickUsername}`, {
+          waitUntil: 'networkidle2', // انتظر لينتهي تحميل البيانات
+          timeout: 30000
+        });
 
-            // ✅ التعديل هنا: سحبنا حالة البث، عدد المشاهدين، وصورة البروفايل
-            await Streamer.updateOne({ _id: s._id }, {
-                isLive: data.livestream ? true : false,
-                viewers: data.livestream ? data.livestream.viewer_count : 0,
-                profilePic: data.user ? data.user.profile_pic : null // جلب الصورة
-            });
-            
-            console.log(`✅ ${s.kickUsername} -> تم تحديث البيانات والصورة`);
-        } catch (e) {
-            console.log(`❌ فشل فحص: ${s.kickUsername} | السبب: ${e.message}`);
+        // سحب محتوى الصفحة (JSON)
+        const content = await page.evaluate(() => document.querySelector("pre")?.innerText || document.body.innerText);
+        const data = JSON.parse(content);
+
+        if (data && data.channel) {
+          const isLive = data.channel.is_live;
+          const viewers = data.channel.viewer_count || 0;
+          const profilePic = data.channel?.user?.profile_pic || streamer.profilePic;
+
+          await Streamer.updateOne(
+            { _id: streamer._id },
+            { $set: { isLive, viewers, profilePic } }
+          );
+          console.log(`✅ ${streamer.kickUsername} | مباشر: ${isLive} | 👁 ${viewers}`);
         }
+      } catch (err) {
+        console.error(`❌ خطأ في معالجة ${streamer.kickUsername}:`, err.message);
+      }
     }
-    await browser.close();
-    console.log("✨ انتهى الفحص.");
+  } catch (error) {
+    console.error("❌ فشل تشغيل المتصفح:", error.message);
+  } finally {
+    if (browser) await browser.close(); // إغلاق المتصفح لتوفير الرام
+    console.log("🏁 انتهت عملية التحديث.");
+  }
 }
 
 
-setInterval(updateStatus, 60000);
+// تحديث كل 3 دقائق (180000 مللي ثانية)
+setInterval(updateStatus, 180000);
 
-// --- [ المسارات ] ---
+// تشغيل الفحص فور تشغيل السيرفر
+updateStatus();
 
+// ================= ROUTES =================
 app.get('/', async (req, res) => {
-    const streamers = await Streamer.find({}).sort({ isLive: -1, viewers: -1 });
-    
-    // لازم نحسب الأرقام هون عشان نبعتها للموقع
-    const stats = {
-        totalStreamers: streamers.length,
-        liveNow: streamers.filter(s => s.isLive).length,
-        totalViewers: streamers.reduce((sum, s) => sum + (s.viewers || 0), 0)
-    };
-
-    // هون بنبعت الـ streamers والـ stats مع بعض
-    res.render('index', { streamers, stats }); 
+  const streamers = await Streamer.find({}).sort({ isLive: -1, viewers: -1 });
+  const stats = {
+    totalStreamers: streamers.length,
+    liveNow: streamers.filter(s => s.isLive).length,
+    totalViewers: streamers.reduce((a, b) => a + (b.viewers || 0), 0)
+  };
+  res.render('index', { streamers, stats });
 });
 
-
-app.post('/apply', async (req, res) => { // تأكد من وجود async هنا
-    const { kickUser, discordName } = req.body;
-    
-    if(!kickUser) return res.send("الاسم مطلوب");
-
-    // السطر اللي مسبب لك المشكلة
-    const existing = await Application.findOne({ kickUsername: kickUser.trim() });
-    
-    if(existing) return res.send("<script>alert('⚠️ هذا الاسم قدم طلباً بالفعل.'); window.location='/';</script>");
-
-    await Application.create({ kickUsername: kickUser.trim(), discordName: discordName });
-    res.send("<script>alert('✅ تم إرسال طلبك بنجاح!'); window.location='/';</script>");
-});
-
-app.get('/admin/reject/:id', async (req, res) => {
-    await Application.findByIdAndDelete(req.params.id);
-    res.redirect('/admin-justice');
-});
-// الحماية المحدثة: بتفحص أي رابط ببدأ بكلمة admin
-app.use('/admin', (req, res, next) => {
-    const password = req.query.pass;
-    if (password !== "1234") return res.send("❌ ممنوع");
-    next();
+app.post('/apply', async (req, res) => {
+  const { kickUser, discordName } = req.body;
+  if (!kickUser) return res.send("الاسم مطلوب");
+  const clean = kickUser.trim();
+  await Application.deleteMany({ kickUsername: clean });
+  await Application.create({ kickUsername: clean, discordName });
+  res.send("<script>alert('✅ تم إرسال طلبك!'); window.location='/';</script>");
 });
 
 app.get('/admin-justice', async (req, res) => {
-    const apps = await Application.find({ status: 'pending' });
-    const streamers = await Streamer.find({}); // جلب الستريمرز الحاليين
-    res.render('admin', { apps, streamers }); // تمرير الستريمرز للأدمن
+  if (req.query.pass !== "1234") return res.status(403).send("❌ غير مصرح");
+  const apps = await Application.find({ status: 'pending' });
+  const streamers = await Streamer.find({});
+  res.render('admin', { apps, streamers });
 });
-
-app.get('/admin/delete-streamer/:id', async (req, res) => {
-    await Streamer.findByIdAndDelete(req.params.id);
-    res.redirect('/admin-justice');
-});
-app.get('/live', async (req, res) => {
-    const liveStreamers = await Streamer.find({ isLive: true }).sort({ viewers: -1 });
-    res.render('live', { streamers: liveStreamers });
-});
-
 
 app.get('/admin/accept/:id', async (req, res) => {
-    const appData = await Application.findById(req.params.id);
-    if (appData) {
-        await Streamer.findOneAndUpdate(
-            { kickUsername: appData.kickUsername },
-            { kickUsername: appData.kickUsername },
-            { upsert: true }
-        );
-        appData.status = 'accepted';
-        await appData.save();
-    }
-    res.redirect('/admin-justice');
+  const appData = await Application.findByIdAndDelete(req.params.id);
+  if (appData) {
+    await Streamer.updateOne(
+      { kickUsername: appData.kickUsername },
+      { $set: { kickUsername: appData.kickUsername } },
+      { upsert: true }
+    );
+    // تحديث الحالة فوراً بعد القبول
+    updateStatus();
+  }
+  res.redirect('/admin-justice?pass=1234');
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-    console.log(`🚀 الموقع شغال على بورت: ${PORT}`);
+// ================= SERVER =================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 السيرفر شغال بنجاح على المنفذ ${PORT}`);
 });
-

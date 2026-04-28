@@ -7,6 +7,51 @@
     <title>Justice City | Hub الملكي</title>
     <link href="https://googleapis.com" rel="stylesheet">
     <style>
+        body::before {
+    content: "";
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 650px;
+    height: 650px;
+    background: url('/logo.png') no-repeat center;
+    background-size: contain;
+    opacity: 0.04;
+    transform: translate(-50%, -50%);
+    z-index: -1;
+    pointer-events: none;
+    filter: blur(0.5px) drop-shadow(0 0 60px rgba(212,175,55,0.3));
+}
+        body::before {
+    content: "";
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 550px;
+    height: 550px;
+    background: url('/logo.png') no-repeat center;
+    background-size: contain;
+    opacity: 0.06;
+    transform: translate(-50%, -50%);
+    z-index: -1;
+    pointer-events: none;
+    filter: drop-shadow(0 0 40px rgba(212,175,55,0.25));
+}
+        /* تنسيق جعل النافذة تظهر في منتصف الشاشة تماماً */
+#apply-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8); /* خلفية سوداء شفافة */
+    display: none; /* مخفي افتراضياً */
+    justify-content: center;
+    align-items: center;
+    z-index: 2000; /* أعلى من كل شيء */
+    backdrop-filter: blur(5px);
+}
+
         .btn-support {
     background: rgba(212, 175, 55, 0.1);
     color: #d4af37 !important;
@@ -184,7 +229,7 @@
 
     </style>
     <!-- حط هاد السطر قبل </head> -->
-<script src="https://jsdelivr.net"></script>
+<script src="https://cdn.jsdelivr.net/npm/tsparticles@2/tsparticles.bundle.min.js"></script>
 
 </head>
 <body>
@@ -210,11 +255,12 @@
     </div>
 </nav>
 
-<div class="filter-container" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 30px;">
-    <button onclick="filterStreamers('all')" class="filter-btn active">الكل</button>
-    <button onclick="filterStreamers('live')" class="filter-btn">البث المباشر</button>
-    <button onclick="filterStreamers('offline')" class="filter-btn">غير متصل</button>
+<div class="filter-container">
+    <button onclick="filterStreamers('all', event)" class="filter-btn active">الكل</button>
+    <button onclick="filterStreamers('live', event)" class="filter-btn">البث المباشر</button>
+    <button onclick="filterStreamers('offline', event)" class="filter-btn">غير متصل</button>
 </div>
+
 
     <div class="container">
         <!-- تعديل هذا السطر ليصبح مخفياً في البداية -->
@@ -270,34 +316,41 @@
 
 
 
-        <div class="grid">
-            <% if (streamers && streamers.length > 0) { %>
-                <% streamers.forEach(function(s) { %>
-                    <div class="card <%= s.isLive ? 'live' : '' %>">
-                        <% if (s.isLive) { %>
-                            <div style="position:absolute; top:10px; left:10px; background:#ff0000; padding:5px 10px; border-radius:8px; font-size:12px; font-weight:bold;">🔴 LIVE</div>
-                        <% } %>
-                        <img src="<%= s.profilePic || 'https://ui-avatars.com' + s.kickUsername + '&background=151515&color=d4af37' %>" class="avatar">
+ <div class="grid">
+    <% if (streamers && streamers.length > 0) { %>
+        <% streamers.forEach(function(s) { %>
+            <!-- استخدمنا s بدل streamer لأنك عرفتها في الـ function(s) -->
+            <div class="card <%= s.isLive ? 'live' : '' %>" data-status="<%= s.isLive ? 'live' : 'offline' %>">
+                
+                <!-- تصليح رابط الصورة وصورة احتياطية في حال الفشل -->
+                <img src="<%= (s.profilePic && s.profilePic !== '') ? s.profilePic : '/logo.png' %>" 
+                     class="avatar" 
+                     alt="avatar"
+                     onerror="this.src='/logo.png'">
 
-                        <div style="font-size: 24px; font-weight: bold;"><%= s.kickUsername %></div>
-                        <div style="margin: 10px 0; font-weight: bold;">
-                            <% if (s.isLive) { %>
-                                <span style="color: #00ff99;">مباشر الآن</span><br>
-                                <span style="color: #aaa;">👥 <%= s.viewers %> مشاهد</span>
-                            <% } else { %>
-                                <span style="color: #666;">⚫ أوفلاين</span>
-                            <% } %>
-                        </div>
-<a href="https://kick.com/<%= s.kickUsername %>" target="_blank" class="btn">
-    <%= s.isLive ? 'دخول البث' : 'دخول القناة' %>
-</a>
+                <h3 style="margin: 10px 0;"><%= s.kickUsername %></h3>
 
-
+                <% if (s.isLive) { %>
+                    <div style="color: #00ff99; font-weight: bold; margin-bottom: 10px;">
+                         🔴 مباشر الآن
+                         <br>
+                         <span style="font-size: 14px; color: #d4af37;">👀 <%= s.viewers %> مشاهد</span>
                     </div>
-                <% }); %>
-            <% } else { %>
-                <div style="text-align:center; color:#777; font-size:20px; grid-column: 1 / -1;">🚫 لا يوجد ستريمرز حالياً</div>
-            <% } %>
+                <% } else { %>
+                    <div style="color: #666; margin-bottom: 10px;">غير متصل</div>
+                <% } %>
+
+                <!-- تصليح رابط القناة (إضافة السلاش /) -->
+                <a href="https://kick.com/<%= s.kickUsername %>" target="_blank" class="btn">
+                    <%= s.isLive ? 'دخول البث' : 'دخول القناة' %>
+                </a>
+            </div>
+        <% }); %>
+    <% } else { %>
+        <div style="text-align:center; color:#777; font-size:20px; grid-column: 1 / -1;">🚫 لا يوجد ستريمرز حالياً</div>
+    <% } %>
+</div>
+
         </div>
     </div>
     <!-- نافذة أضف قناتك -->
@@ -320,22 +373,30 @@
 
     <!-- السكريبت الموحد لكل الوظائف -->
     <script>
-function filterStreamers(type) {
-    // تحديث شكل الأزرار
+function filterStreamers(type, event) {
+    // 1. تحديث شكل الأزرار (إزالة active من الكل وإضافتها للزر المضغطوط)
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-    event.currentTarget.classList.add('active');
+    if (event) {
+        event.currentTarget.classList.add('active');
+    }
 
-    const cards = document.querySelectorAll('.grid .card'); // استخدام الكلاس الصحيح
+    // 2. جلب كل الكروت الموجودة داخل الـ grid
+    const cards = document.querySelectorAll('.grid .card');
+    
     cards.forEach(card => {
+        // فحص هل الكرت يحتوي على كلاس live (اللي أنت ضايفه أصلاً في EJS)
         const isLive = card.classList.contains('live');
+
         if (type === 'all') {
-            card.style.display = 'block';
+            card.style.display = 'block'; // إظهار الكل
         } else if (type === 'live') {
-            card.style.display = isLive ? 'block' : 'none';
+            card.style.display = isLive ? 'block' : 'none'; // إظهار اللايف فقط
         } else if (type === 'offline') {
-            card.style.display = !isLive ? 'block' : 'none';
+            card.style.display = !isLive ? 'block' : 'none'; // إظهار الأوفلاين فقط
         }
     });
+
+    console.log("Filtering done for:", type); // للتأكد في Console المتصفح
 }
 
 
@@ -372,30 +433,35 @@ function filterStreamers(type) {
     <script>
 async function loadParticles() {
     await tsParticles.load("tsparticles", {
-        fpsLimit: 60,
         particles: {
-            number: { value: 100, density: { enable: true, area: 800 } },
-            color: { value: "#d4af37" },
+            number: { value: 80 },
+            color: { value: ["#ff7b00", "#d4af37"] },
             shape: { type: "circle" },
-            opacity: {
-                value: { min: 0.1, max: 0.6 },
-                animation: { enable: true, speed: 0.5, sync: false }
-            },
+            opacity: { value: 0.4 },
             size: { value: { min: 1, max: 3 } },
-            move: {
-                enable: true,
-                speed: 0.6,
-                direction: "none",
-                random: true,
-                straight: false,
-                outModes: { default: "out" }
-            }
+          move: {
+    enable: true,
+    speed: 1.5,
+    direction: "top",
+    random: true,
+    outModes: { default: "out" }
+}
         },
-        detectRetina: true
+        background: {
+            color: "#050505"
+        }
     });
 }
+
 loadParticles();
+loadParticles();
+</script>
+<script>
+  // كود بخلي الصفحة تعمل ريفريش لحالها كل دقيقة عشان تحديث الحالات
+  setTimeout(function(){
+     location.reload();
+  }, 60000); 
 </script>
 
 </body>
-</html>
+</html> 
