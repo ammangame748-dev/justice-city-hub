@@ -1,8 +1,6 @@
 const { join } = require('path');
 
-/**
- * @type {import("puppeteer").Configuration}
- */
 module.exports = {
-  cacheDirectory: join(__dirname, '.cache', 'puppeteer'),
+  // هذا المسار هو اللي Render بيقدر يقرأ منه ويكتب فيه بدون مشاكل
+  cacheDirectory: join(__dirname, 'node_modules', '.cache', 'puppeteer'),
 };
