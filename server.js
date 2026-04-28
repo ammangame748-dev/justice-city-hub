@@ -32,10 +32,12 @@ async function updateStatus() {
     console.log("🔍 جاري فحص حالة الستريمرز...");
     const streamers = await Streamer.find({ kickUsername: { $ne: null, $exists: true } });
     
-    const browser = await puppeteer.launch({ 
-        headless: "new",
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
-    });
+   const browser = await puppeteer.launch({
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    // هاد السطر السحري اللي بخلي رندر يدور على الكروم لحاله
+    executablePath: process.env.NODE_ENV === 'production' ? null : puppeteer.executablePath()
+});
+
     const page = await browser.newPage();
 
     for (const s of streamers) {
