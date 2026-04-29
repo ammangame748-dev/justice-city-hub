@@ -40,10 +40,18 @@ async function updateStatus() {
 
   let browser;
   try {
-    browser = await puppeteer.launch({
-      headless: "new",
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
-    });
+   browser = await puppeteer.launch({
+  headless: "new",
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--single-process', // ضروري جداً لتقليل استهلاك الرام في Render
+    '--no-zygote'
+  ],
+  // هذا السطر يخبر البرنامج بمكان المتصفح في سيرفرات Render
+  executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome', 
+});
+
 
     const page = await browser.newPage();
     // إعداد User Agent ليبدو كمتصفح حقيقي
@@ -55,33 +63,34 @@ async function updateStatus() {
         await page.goto(`https://kick.com/${cleanName}`, { waitUntil: 'networkidle2', timeout: 60000 });
 
         // انتظر قليلاً لتحميل محتوى الـ React
-        await new Promise(r => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 10000));
 
-        const statusData = await page.evaluate(() => {
-          // 1. فحص هل يوجد كلمة "LIVE" في الصفحة داخل حاوية البث
-          const liveBadge = document.querySelector('.v-live-indicator') || 
-                            document.querySelector('.bg-red-600') || // غالباً لون علامة اللايف أحمر
-                            document.body.innerText.includes('LIVE');
+       const statusData = await page.evaluate(() => {
+    // البحث عن صورة البروفايل من خلال الـ Alt المعتاد في كيك
+    const imgEl = document.querySelector('img[src*="user_assets"]') || 
+                  document.querySelector('img[alt*="avatar"]') ||
+                  document.querySelector('.profile-picture img');
 
-          // 2. محاولة جلب عدد المشاهدين
-          const viewersEl = document.querySelector('.v-live-indicator__viewer-count') || 
-                            document.querySelector('.viewer-count span');
-          
-          // 3. جلب صورة البروفايل (لأنك قلت أنها لا تظهر)
-          const imgEl = document.querySelector('img[alt*="Avatar"]') || 
-                        document.querySelector('.profile-picture img');
+    // فحص حالة اللايف: نبحث عن عنصر يحتوي نص "LIVE" أو وجود علامة المشاهدات الخضراء
+    const isLive = !!document.querySelector('.px-2.py-0.5.bg-red-600') || 
+                   document.body.innerText.includes('LIVE');
 
-          let vCount = 0;
-          if (viewersEl) {
-              vCount = parseInt(viewersEl.innerText.replace(/[^0-9]/g, '')) || 0;
-          }
+    // جلب عدد المشاهدين: كيك يضعها غالباً في عنصر بجانب علامة LIVE
+    const viewersEl = document.querySelector('.v-live-indicator__viewer-count') || 
+                      document.querySelector('span[class*="viewer-count"]');
 
-          return { 
-            isLive: !!liveBadge && vCount > 0, // إذا في علامة لايف ومشاهدات أكثر من 0
-            viewers: vCount,
-            profilePic: imgEl ? imgEl.src : null
-          };
-        });
+    let vCount = 0;
+    if (viewersEl) {
+        vCount = parseInt(viewersEl.innerText.replace(/[^0-9]/g, '')) || 0;
+    }
+
+    return { 
+        isLive: isLive,
+        viewers: vCount,
+        profilePic: imgEl ? imgEl.src : null
+    };
+});
+
 
         await Streamer.updateOne(
           { _id: streamer._id },

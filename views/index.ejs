@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
+    <meta name="referrer" content="no-referrer">
    <link rel="icon" type="image/png" href="/logo.png?v=2">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -323,11 +324,11 @@
             <div class="card <%= s.isLive ? 'live' : '' %>" data-status="<%= s.isLive ? 'live' : 'offline' %>">
                 
                 <!-- تصليح رابط الصورة وصورة احتياطية في حال الفشل -->
-                <img src="<%= streamer.profilePic || '/default-avatar.png' %>" alt="streamer">
+                <img src="<%= s.profilePic || '/logo.png' %>" 
+     class="avatar" 
+     alt="avatar" 
+     onerror="this.src='/logo.png'">
 
-                     class="avatar" 
-                     alt="avatar"
-                     onerror="this.src='/logo.png'">
 
                 <h3 style="margin: 10px 0;"><%= s.kickUsername %></h3>
 
