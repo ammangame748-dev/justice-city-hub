@@ -110,7 +110,7 @@ async function updateStatus() {
 
 
 // تحديث كل 3 دقائق (180000 مللي ثانية)
-setInterval(updateStatus, 4000);
+setInterval(updateStatus,300000);
 
 // تشغيل الفحص فور تشغيل السيرفر
 updateStatus();
@@ -163,11 +163,11 @@ app.get('/admin/accept/:id', async (req, res) => {
       { $set: { kickUsername: appData.kickUsername } },
       { upsert: true }
     );
-    // تحديث الحالة فوراً بعد القبول
-    updateStatus();
+    // ✅ حذفنا استدعاء updateStatus من هنا لحماية السيرفر من الانهيار
   }
   res.redirect('/admin-justice?pass=1234');
 });
+
 // ✅ راوت رفض طلبات الانضمام
 app.get('/admin/reject/:id', async (req, res) => {
   if (req.query.pass !== "1234") return res.status(403).send("❌ غير مصرح");
