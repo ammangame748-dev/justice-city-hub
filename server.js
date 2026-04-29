@@ -33,93 +33,84 @@ const Application = mongoose.model('Application', new mongoose.Schema({
   status: { type: String, default: 'pending' }
 }));
 
-
 async function updateStatus() {
-  console.log("🔄 جاري التحديث المضمون (قراءة الصفحة مباشرة)...");
+  console.log("🔄 جاري التحديث المضمون...");
   const streamers = await Streamer.find({});
   if (streamers.length === 0) return;
 
   let browser;
   try {
-     browser = await puppeteer.launch({
-      headless: "new",
-      args: [
-        '--no-sandbox', 
-        '--disable-setuid-sandbox', 
-        '--disable-dev-shm-usage', 
-        '--single-process'
-      ]
+    browser = await puppeteer.launch({
+      headless: "new", // تأكد أن النسخة حديثة
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
-
     const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
+    // تقليل استهلاك الموارد: منع الصور والخطوط من التحميل
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (['image', 'font', 'stylesheet'].includes(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
 
     for (const streamer of streamers) {
       try {
         const cleanName = streamer.kickUsername.trim().toLowerCase();
         console.log(`🔍 فحص قناة: ${cleanName}`);
         
-        await page.goto(`https://kick.com{cleanName}`, {
-  waitUntil: 'networkidle2', // انتظر لين يهدأ تحميل الصفحة تماماً
-  timeout: 60000 
-});
+        // الإصلاح هنا: أضفنا / و علامة $
+        await page.goto(`https://kick.com/${cleanName}`, {
+          waitUntil: 'networkidle0', 
+          timeout: 30000 
+        });
 
+        // انتظر ثواني بسيطة للتأكد من تحميل الـ DOM
+        await new Promise(r => setTimeout(r, 3000));
 
-        // انتظر 5 ثواني عشان نتأكد إن الحالة ظهرت
-        await new Promise(r => setTimeout(r, 5000));
-
-
-            const statusData = await page.evaluate(() => {
-          // فحص بسيط جداً: هل علامة الـ LIVE موجودة في كود الصفحة؟
-          const liveIndicator = document.querySelector('.v-live-indicator');
+        const statusData = await page.evaluate(() => {
+          // فحص علامة الـ LIVE بأكثر من طريقة
+          const isLive = !!document.querySelector('.v-live-indicator') || 
+                         !!document.querySelector('[data-is-live="true"]') ||
+                         document.body.innerText.includes('LIVE');
           
-          // البحث عن أول صورة بروفايل تظهر
-          const avatar = document.querySelector('img[class*="avatar"]') || 
-                         document.querySelector('.v-avatar img') || 
-                         document.querySelector('img[alt*="avatar"]');
+          const viewersEl = document.querySelector('.v-live-indicator__viewer-count') || 
+                            document.querySelector('.viewer-count');
           
-          // فحص المشاهدين (إذا مش لايف بكون 0)
-          const viewersEl = document.querySelector('.v-live-indicator__viewer-count');
           let vCount = 0;
           if (viewersEl) {
               vCount = parseInt(viewersEl.innerText.replace(/[^0-9]/g, '')) || 0;
           }
 
-          return {
-            isLive: !!liveIndicator, // true إذا موجود، false إذا لا
-            profilePic: avatar ? avatar.src : null,
-            viewers: vCount
-          };
+          return { isLive, viewers: vCount };
         });
-
 
         await Streamer.updateOne(
           { _id: streamer._id },
           { $set: { 
               isLive: statusData.isLive, 
-              viewers: statusData.viewers,
-              profilePic: statusData.profilePic || streamer.profilePic 
+              viewers: statusData.viewers
           }}
         );
-        console.log(`✅ ${cleanName} | لايف: ${statusData.isLive} | 👁 ${statusData.viewers}`);
+        console.log(`✅ ${cleanName} | لايف: ${statusData.isLive} | المشاهدات: ${statusData.viewers}`);
 
       } catch (err) {
-        console.error(`❌ خطأ في ${streamer.kickUsername}:`, err.message);
+        console.error(`❌ خطأ في فحص ${streamer.kickUsername}:`, err.message);
       }
     }
   } catch (error) {
-    console.error("❌ خطأ متصفح:", error.message);
+    console.error("❌ خطأ متصفح كلي:", error.message);
   } finally {
     if (browser) await browser.close();
-    console.log("🏁 انتهت دورة التحديث.");
+    console.log("🏁 انتهت الدورة.");
   }
 }
 
 
-
 // تحديث كل 3 دقائق (180000 مللي ثانية)
-setInterval(updateStatus, 180000);
+setInterval(updateStatus, 4000);
 
 // تشغيل الفحص فور تشغيل السيرفر
 updateStatus();
