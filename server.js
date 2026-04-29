@@ -41,10 +41,16 @@ async function updateStatus() {
 
   let browser;
   try {
-    browser = await puppeteer.launch({
+     browser = await puppeteer.launch({
       headless: "new",
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox', 
+        '--disable-dev-shm-usage', 
+        '--single-process'
+      ]
     });
+
 
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
@@ -54,35 +60,39 @@ async function updateStatus() {
         const cleanName = streamer.kickUsername.trim().toLowerCase();
         console.log(`🔍 فحص قناة: ${cleanName}`);
         
-        await page.goto(`https://kick.com/${cleanName}`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 40000
-        });
+        await page.goto(`https://kick.com{cleanName}`, {
+  waitUntil: 'networkidle2', // انتظر لين يهدأ تحميل الصفحة تماماً
+  timeout: 60000 
+});
+
 
         // انتظر 5 ثواني عشان نتأكد إن الحالة ظهرت
         await new Promise(r => setTimeout(r, 5000));
 
 
-        const statusData = await page.evaluate(() => {
-          // فحص هل كلمة LIVE موجودة في الصفحة أو علامة البث
-          const liveIndicator = document.querySelector('.v-live-indicator') || 
-                               document.body.innerText.includes('LIVE') || 
-                               document.body.innerText.includes('مباشر');
+            const statusData = await page.evaluate(() => {
+          // فحص بسيط جداً: هل علامة الـ LIVE موجودة في كود الصفحة؟
+          const liveIndicator = document.querySelector('.v-live-indicator');
           
-          // سحب صورة البروفايل
-          const avatar = document.querySelector('img.v-avatar__img') || 
-                        document.querySelector('.v-avatar img');
+          // البحث عن أول صورة بروفايل تظهر
+          const avatar = document.querySelector('img[class*="avatar"]') || 
+                         document.querySelector('.v-avatar img') || 
+                         document.querySelector('img[alt*="avatar"]');
           
-          // سحب المشاهدين
+          // فحص المشاهدين (إذا مش لايف بكون 0)
           const viewersEl = document.querySelector('.v-live-indicator__viewer-count');
-          const viewersCount = viewersEl ? parseInt(viewersEl.innerText.replace(/[^0-9]/g, '')) : 0;
+          let vCount = 0;
+          if (viewersEl) {
+              vCount = parseInt(viewersEl.innerText.replace(/[^0-9]/g, '')) || 0;
+          }
 
           return {
-            isLive: !!liveIndicator,
+            isLive: !!liveIndicator, // true إذا موجود، false إذا لا
             profilePic: avatar ? avatar.src : null,
-            viewers: viewersCount
+            viewers: vCount
           };
         });
+
 
         await Streamer.updateOne(
           { _id: streamer._id },
