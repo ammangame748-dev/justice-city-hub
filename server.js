@@ -34,79 +34,76 @@ const Application = mongoose.model('Application', new mongoose.Schema({
 }));
 
 async function updateStatus() {
-  console.log("🔄 جاري التحديث المضمون...");
+  console.log("🔄 جاري التحديث...");
   const streamers = await Streamer.find({});
   if (streamers.length === 0) return;
 
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless: "new", // تأكد أن النسخة حديثة
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      headless: "new",
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
     });
 
     const page = await browser.newPage();
-    // تقليل استهلاك الموارد: منع الصور والخطوط من التحميل
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      if (['image', 'font', 'stylesheet'].includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
+    // إعداد User Agent ليبدو كمتصفح حقيقي
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
 
     for (const streamer of streamers) {
       try {
         const cleanName = streamer.kickUsername.trim().toLowerCase();
-        console.log(`🔍 فحص قناة: ${cleanName}`);
-        
-        // الإصلاح هنا: أضفنا / و علامة $
-        await page.goto(`https://kick.com/${cleanName}`, {
-          waitUntil: 'networkidle0', 
-          timeout: 30000 
-        });
+        await page.goto(`https://kick.com/${cleanName}`, { waitUntil: 'networkidle2', timeout: 60000 });
 
-        // انتظر ثواني بسيطة للتأكد من تحميل الـ DOM
-        await new Promise(r => setTimeout(r, 3000));
+        // انتظر قليلاً لتحميل محتوى الـ React
+        await new Promise(r => setTimeout(r, 5000));
 
         const statusData = await page.evaluate(() => {
-          // فحص علامة الـ LIVE بأكثر من طريقة
-          const isLive = !!document.querySelector('.v-live-indicator') || 
-                         !!document.querySelector('[data-is-live="true"]') ||
-                         document.body.innerText.includes('LIVE');
-          
+          // 1. فحص هل يوجد كلمة "LIVE" في الصفحة داخل حاوية البث
+          const liveBadge = document.querySelector('.v-live-indicator') || 
+                            document.querySelector('.bg-red-600') || // غالباً لون علامة اللايف أحمر
+                            document.body.innerText.includes('LIVE');
+
+          // 2. محاولة جلب عدد المشاهدين
           const viewersEl = document.querySelector('.v-live-indicator__viewer-count') || 
-                            document.querySelector('.viewer-count');
+                            document.querySelector('.viewer-count span');
           
+          // 3. جلب صورة البروفايل (لأنك قلت أنها لا تظهر)
+          const imgEl = document.querySelector('img[alt*="Avatar"]') || 
+                        document.querySelector('.profile-picture img');
+
           let vCount = 0;
           if (viewersEl) {
               vCount = parseInt(viewersEl.innerText.replace(/[^0-9]/g, '')) || 0;
           }
 
-          return { isLive, viewers: vCount };
+          return { 
+            isLive: !!liveBadge && vCount > 0, // إذا في علامة لايف ومشاهدات أكثر من 0
+            viewers: vCount,
+            profilePic: imgEl ? imgEl.src : null
+          };
         });
 
         await Streamer.updateOne(
           { _id: streamer._id },
           { $set: { 
               isLive: statusData.isLive, 
-              viewers: statusData.viewers
+              viewers: statusData.viewers,
+              profilePic: statusData.profilePic || streamer.profilePic // احتفظ بالقديمة إذا لم يجد جديدة
           }}
         );
-        console.log(`✅ ${cleanName} | لايف: ${statusData.isLive} | المشاهدات: ${statusData.viewers}`);
+        console.log(`✅ ${cleanName} | لايف: ${statusData.isLive} | صورة: ${!!statusData.profilePic}`);
 
       } catch (err) {
         console.error(`❌ خطأ في فحص ${streamer.kickUsername}:`, err.message);
       }
     }
   } catch (error) {
-    console.error("❌ خطأ متصفح كلي:", error.message);
+    console.error("❌ خطأ متصفح:", error.message);
   } finally {
     if (browser) await browser.close();
-    console.log("🏁 انتهت الدورة.");
   }
 }
+
 
 
 // تحديث كل 3 دقائق (180000 مللي ثانية)

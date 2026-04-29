@@ -323,7 +323,8 @@
             <div class="card <%= s.isLive ? 'live' : '' %>" data-status="<%= s.isLive ? 'live' : 'offline' %>">
                 
                 <!-- تصليح رابط الصورة وصورة احتياطية في حال الفشل -->
-                <img src="<%= (s.profilePic && s.profilePic !== '') ? s.profilePic : '/logo.png' %>" 
+                <img src="<%= streamer.profilePic || '/default-avatar.png' %>" alt="streamer">
+
                      class="avatar" 
                      alt="avatar"
                      onerror="this.src='/logo.png'">
