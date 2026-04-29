@@ -34,62 +34,78 @@ const Application = mongoose.model('Application', new mongoose.Schema({
 }));
 
 
-const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 async function updateStatus() {
-  console.log("🔄 جاري التحديث باستخدام المتصفح (Puppeteer)...");
-  
+  console.log("🔄 جاري التحديث المضمون (قراءة الصفحة مباشرة)...");
   const streamers = await Streamer.find({});
+  if (streamers.length === 0) return;
+
   let browser;
-
   try {
-browser = await puppeteer.launch({
-  headless: "new",
-  args: ['--no-sandbox', '--disable-setuid-sandbox']
-});
-
-
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
 
     const page = await browser.newPage();
-    
-    // محاكاة متصفح حقيقي عشان ما ننكشف
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
 
     for (const streamer of streamers) {
       try {
-        console.log(`🔍 فحص: ${streamer.kickUsername}`);
+        const cleanName = streamer.kickUsername.trim().toLowerCase();
+        console.log(`🔍 فحص قناة: ${cleanName}`);
         
-        // الانتقال لرابط الـ API الخاص بالقناة
-        await page.goto(`https://kick.com/api/v2/channels/${streamer.kickUsername}`, {
-          waitUntil: 'networkidle2', // انتظر لينتهي تحميل البيانات
-          timeout: 30000
+        await page.goto(`https://kick.com/${cleanName}`, {
+          waitUntil: 'domcontentloaded',
+          timeout: 40000
         });
 
-        // سحب محتوى الصفحة (JSON)
-        const content = await page.evaluate(() => document.querySelector("pre")?.innerText || document.body.innerText);
-        const data = JSON.parse(content);
+        // انتظر 5 ثواني عشان نتأكد إن الحالة ظهرت
+        await new Promise(r => setTimeout(r, 5000));
 
-        if (data && data.channel) {
-          const isLive = data.channel.is_live;
-          const viewers = data.channel.viewer_count || 0;
-          const profilePic = data.channel?.user?.profile_pic || streamer.profilePic;
 
-          await Streamer.updateOne(
-            { _id: streamer._id },
-            { $set: { isLive, viewers, profilePic } }
-          );
-          console.log(`✅ ${streamer.kickUsername} | مباشر: ${isLive} | 👁 ${viewers}`);
-        }
+        const statusData = await page.evaluate(() => {
+          // فحص هل كلمة LIVE موجودة في الصفحة أو علامة البث
+          const liveIndicator = document.querySelector('.v-live-indicator') || 
+                               document.body.innerText.includes('LIVE') || 
+                               document.body.innerText.includes('مباشر');
+          
+          // سحب صورة البروفايل
+          const avatar = document.querySelector('img.v-avatar__img') || 
+                        document.querySelector('.v-avatar img');
+          
+          // سحب المشاهدين
+          const viewersEl = document.querySelector('.v-live-indicator__viewer-count');
+          const viewersCount = viewersEl ? parseInt(viewersEl.innerText.replace(/[^0-9]/g, '')) : 0;
+
+          return {
+            isLive: !!liveIndicator,
+            profilePic: avatar ? avatar.src : null,
+            viewers: viewersCount
+          };
+        });
+
+        await Streamer.updateOne(
+          { _id: streamer._id },
+          { $set: { 
+              isLive: statusData.isLive, 
+              viewers: statusData.viewers,
+              profilePic: statusData.profilePic || streamer.profilePic 
+          }}
+        );
+        console.log(`✅ ${cleanName} | لايف: ${statusData.isLive} | 👁 ${statusData.viewers}`);
+
       } catch (err) {
-        console.error(`❌ خطأ في معالجة ${streamer.kickUsername}:`, err.message);
+        console.error(`❌ خطأ في ${streamer.kickUsername}:`, err.message);
       }
     }
   } catch (error) {
-    console.error("❌ فشل تشغيل المتصفح:", error.message);
+    console.error("❌ خطأ متصفح:", error.message);
   } finally {
-    if (browser) await browser.close(); // إغلاق المتصفح لتوفير الرام
-    console.log("🏁 انتهت عملية التحديث.");
+    if (browser) await browser.close();
+    console.log("🏁 انتهت دورة التحديث.");
   }
 }
+
 
 
 // تحديث كل 3 دقائق (180000 مللي ثانية)
